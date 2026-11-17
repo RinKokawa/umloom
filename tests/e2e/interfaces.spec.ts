@@ -1,0 +1,31 @@
+import { expect, test } from '@playwright/test'
+
+test('create an interface with a method, round-trip both formats, and restore', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: '添加接口' }).click()
+  await expect(page.getByRole('button', { name: '编辑接口 Interface1' })).toContainText('<<interface>>')
+  await page.getByLabel('接口名').fill('Payable')
+  await page.getByRole('button', { name: '添加方法' }).click()
+  await page.getByLabel('方法 1 名称').fill('pay')
+  await page.getByLabel('方法 1 返回类型').fill('Boolean')
+  await page.getByRole('button', { name: '为方法 1 添加参数' }).click()
+  await page.getByLabel('方法 1 参数 1 名称').fill('amount')
+  await page.getByLabel('方法 1 参数 1 类型').fill('Money')
+  await page.getByRole('button', { name: '应用更改' }).click()
+  await expect(page.getByRole('textbox', { name: 'PlantUML source' })).toHaveValue(/interface Payable[\s\S]*\+ pay\(amount: Money\): Boolean/)
+  await page.getByLabel('源码格式').selectOption('mermaid')
+  await expect(page.getByRole('textbox', { name: 'Mermaid source' })).toHaveValue(/<<interface>>[\s\S]*pay\(amount: Money\) Boolean/)
+  await page.reload()
+  await expect(page.getByRole('button', { name: '编辑接口 Payable' })).toBeVisible()
+  await page.getByLabel('源码格式').selectOption('plantuml')
+  await expect(page.getByRole('textbox', { name: 'PlantUML source' })).toHaveValue(/interface Payable/)
+})
+
+test('a class and an interface remain distinct on source edits', async ({ page }) => {
+  await page.goto('/')
+  const source = page.getByRole('textbox', { name: 'PlantUML source' })
+  await source.fill('@startuml\nclass Payment\ninterface Payable\n@enduml')
+  await expect(page.locator('footer')).toContainText('已同步')
+  await expect(page.getByRole('button', { name: '编辑类 Payment' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '编辑接口 Payable' })).toBeVisible()
+})
