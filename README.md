@@ -36,3 +36,7 @@ npm run test:e2e
 ```
 
 可设置 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` 使用已安装的 Chromium。浏览器测试启动本地 Vite 服务，不连接外网画布。
+
+## 许可证
+
+本项目采用 [MIT License](LICENSE)。
