@@ -8,6 +8,8 @@ import { assertOjDiagram } from './uml/model'
 import type { Diagram } from './uml/model'
 
 type Format = 'plantuml' | 'mermaid'
+const formatNames: Record<Format, string> = { plantuml: 'PlantUML', mermaid: 'Mermaid' }
+const isFormat = (value: unknown): value is Format => typeof value === 'string' && Object.hasOwn(formatNames, value)
 const initial = `@startuml
 class Classroom
 class Student
@@ -19,6 +21,7 @@ const source = ref(initial)
 const format = ref<Format>('plantuml')
 const state = ref<'synced' | 'pending' | 'invalid' | 'conflict'>('synced')
 const message = ref('画布和源码已同步')
+const formatError = ref('')
 const storageOK = ref(true)
 const canvasDirty = ref(false)
 const canvas = ref<InstanceType<typeof NativeCanvas> | null>(null)
@@ -28,9 +31,12 @@ let syncedKey = JSON.stringify(model.value)
 let timer: ReturnType<typeof setTimeout> | undefined
 let updating = false
 let saveBlocked = false
-const parser = (text: string, selected = format.value) => selected === 'plantuml' ? parsePlantUml(text) : parseMermaid(text)
-const serializer = (diagram: Diagram, selected = format.value) => selected === 'plantuml' ? toPlantUml(diagram) : toMermaid(diagram)
+const parsers: Record<Format, (text: string) => Diagram> = { plantuml: parsePlantUml, mermaid: parseMermaid }
+const serializers: Record<Format, (diagram: Diagram) => string> = { plantuml: toPlantUml, mermaid: toMermaid }
+const parser = (text: string, selected = format.value) => parsers[selected](text)
+const serializer = (diagram: Diagram, selected = format.value) => serializers[selected](diagram)
 const readOnlySource = computed(() => canvasDirty.value || state.value === 'conflict')
+watch(canvasDirty, dirty => { if (!dirty) formatError.value = '' })
 
 function save() {
   if (saveBlocked) return
@@ -56,7 +62,7 @@ function syncSource(force = false) {
     save(); return false
   }
 }
-function onCanvasApply(next: Diagram): boolean {
+function onCanvasApply(next: Diagram): boolean | string {
   if (state.value !== 'synced') return false
   try {
     assertOjDiagram(next)
@@ -67,10 +73,11 @@ function onCanvasApply(next: Diagram): boolean {
     try { model.value = next; source.value = generated } finally { updating = false }
     syncedKey = JSON.stringify(next); state.value = 'synced'; message.value = '画布和源码已同步'
     save(); return true
-  } catch (e) { message.value = `画布更改未应用：${e instanceof Error ? e.message : String(e)}`; return false }
+  } catch (e) { message.value = `画布更改未应用：${e instanceof Error ? e.message : String(e)}`; return message.value }
 }
 watch(source, () => {
   if (updating) return
+  formatError.value = ''
   clearTimeout(timer)
   state.value = 'pending'; message.value = '正在检查源码…'
   // Persist the unfinished text immediately alongside the last valid model.
@@ -79,18 +86,25 @@ watch(source, () => {
 }, { flush: 'sync' })
 function changeFormat(event: Event) {
   const select = event.target as HTMLSelectElement
-  const target = select.value as Format
+  const target = select.value
+  if (!isFormat(target)) { select.value = format.value; return }
   if (target === format.value) return
-  if (canvasDirty.value) { select.value = format.value; message.value = '请先应用或撤销画布面板中的编辑。'; return }
+  formatError.value = ''
+  const reject = (reason: string) => {
+    select.value = format.value
+    formatError.value = `无法切换到 ${formatNames[target]}：${reason}`
+  }
+  if (canvasDirty.value) { reject('请先应用或撤销画布面板中的编辑。'); return }
   if (state.value === 'pending') syncSource()
-  if (state.value !== 'synced') { select.value = format.value; return }
+  if (state.value !== 'synced') { reject(`请先解决当前同步问题。${message.value}`); return }
   try {
     const next = serializer(model.value, target)
     if (JSON.stringify(parser(next, target)) !== JSON.stringify(model.value)) throw new Error('目标格式无法无损表示当前内容。')
     updating = true
     try { format.value = target; source.value = next } finally { updating = false }
+    message.value = '画布和源码已同步'
     save()
-  } catch (e) { select.value = format.value; message.value = `无法切换格式：${e instanceof Error ? e.message : String(e)}` }
+  } catch (e) { reject(e instanceof Error ? e.message : String(e)) }
 }
 function switchTheme() {
   theme.value = theme.value === 'dark' ? 'light' : 'dark'
@@ -110,7 +124,7 @@ function reset() {
   catch { storageOK.value = false; message.value = '无法备份当前内容，未重置。'; return }
   updating = true
   try { format.value = 'plantuml'; source.value = initial; model.value = parsePlantUml(initial) } finally { updating = false }
-  syncedKey = JSON.stringify(model.value); state.value = 'synced'; message.value = '已恢复示例'; save()
+  syncedKey = JSON.stringify(model.value); state.value = 'synced'; message.value = '已恢复示例'; formatError.value = ''; save()
 }
 function resolveConflict(keep: 'source' | 'canvas') {
   if (!window.confirm('将先备份当前源码和画布，再应用所选内容。是否继续？')) return
@@ -133,7 +147,8 @@ onMounted(() => {
     const text = localStorage.getItem(storageKey)
     if (!text) return
     const data = JSON.parse(text)
-    if (data.version !== 1 || typeof data.source !== 'string' || !['plantuml', 'mermaid'].includes(data.format) || !data.model || !Array.isArray(data.model.classes) || !Array.isArray(data.model.relations) || typeof data.syncedKey !== 'string') throw new Error('invalid draft')
+    if (data.format === 'nomnoml') return
+    if (data.version !== 1 || typeof data.source !== 'string' || !isFormat(data.format) || !data.model || !Array.isArray(data.model.classes) || !Array.isArray(data.model.relations) || typeof data.syncedKey !== 'string') throw new Error('invalid draft')
     assertOjDiagram(data.model)
     updating = true
     try { model.value = data.model; source.value = data.source; format.value = data.format; syncedKey = data.syncedKey } finally { updating = false }
@@ -162,8 +177,9 @@ onBeforeUnmount(() => { clearTimeout(timer); save() })
         <NativeCanvas ref="canvas" :diagram="model" problem-id="playground" :disabled="state !== 'synced'" :on-apply="onCanvasApply" @dirty="canvasDirty = $event" />
       </section>
       <section class="pane code-pane" :class="{'mobile-hidden': mobileView !== 'source'}">
-        <div class="pane-header"><span>源码</span><label>格式 <select :value="format" aria-label="源码格式" @change="changeFormat"><option value="plantuml">PlantUML</option><option value="mermaid">Mermaid</option></select></label></div>
-        <textarea v-model="source" :readonly="readOnlySource" :aria-label="format === 'plantuml' ? 'PlantUML source' : 'Mermaid source'" spellcheck="false"></textarea>
+        <div class="pane-header"><span>源码</span><label>格式 <select :value="format" aria-label="源码格式" :aria-describedby="formatError ? 'format-error' : undefined" @change="changeFormat"><option value="plantuml">PlantUML</option><option value="mermaid">Mermaid</option></select></label></div>
+        <p v-if="formatError" id="format-error" class="format-error" role="alert">{{ formatError }} 切换未完成，原源码已保留。</p>
+        <textarea v-model="source" :readonly="readOnlySource" :aria-label="`${formatNames[format]} source`" spellcheck="false"></textarea>
         <p class="hint">支持普通类、接口、属性、方法、普通关联及两端多重性。未完成或不支持的源码会保留，不会覆盖画布。</p>
       </section>
     </main>

@@ -1,15 +1,18 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, toRaw, watch } from 'vue'
-import { Plus, Link2, Trash2, Check, X } from '@lucide/vue'
+import { Plus, Link2, Trash2, Check, X, ChevronDown, Box, Braces } from '@lucide/vue'
 import { assertOjDiagram } from './uml/model'
 import { formatAttributeRow, formatMethodRow, newAttributeRow, newMethodRow, newParameterRow, parseAttributeRow, parseMethodRow } from './uml/member-editor'
 import type { AttributeRow, MethodRow } from './uml/member-editor'
 import type { Diagram } from './uml/model'
 
-const props = defineProps<{ diagram: Diagram; problemId: string; disabled: boolean; onApply: (model: Diagram) => boolean }>()
+const props = defineProps<{ diagram: Diagram; problemId: string; disabled: boolean; onApply: (model: Diagram) => boolean | string }>()
 const emit = defineEmits<{ dirty: [value: boolean] }>()
 type Point = { x: number; y: number }
 const svg = ref<SVGSVGElement | null>(null)
+const nodePicker = ref<HTMLElement | null>(null)
+const nodePickerButton = ref<HTMLButtonElement | null>(null)
+const nodePickerOpen = ref(false)
 const positions = ref<Record<string, Point>>({})
 const storageOk = ref(true)
 const selection = ref<{ kind: 'class' | 'relation'; index: number } | null>(null)
@@ -104,7 +107,8 @@ function apply() {
     }
     const oldName = selection.value.kind === 'class' ? props.diagram.classes[selection.value.index].name : ''
     const newName = selection.value.kind === 'class' ? next.classes[selection.value.index].name : ''
-    if (!props.onApply(next)) throw new Error('无法同步源码；编辑内容仍保留，请检查同步提示。')
+    const applied = props.onApply(next)
+    if (applied !== true) throw new Error(typeof applied === 'string' ? applied : '无法同步源码；编辑内容仍保留，请检查同步提示。')
     if (oldName && oldName !== newName && positions.value[oldName]) { positions.value[newName] = positions.value[oldName]; delete positions.value[oldName]; saveLayout() }
     setDirty(false); error.value = ''
   } catch (e) { error.value = e instanceof Error ? e.message : String(e) }
@@ -114,6 +118,22 @@ function cancel() {
   selection.value = null; setDirty(false); error.value = ''
   if (picked && picked.index < (picked.kind === 'class' ? props.diagram.classes.length : props.diagram.relations.length) && !props.disabled) choose(picked.kind, picked.index)
 }
+function closeNodePicker(restoreFocus = false) {
+  nodePickerOpen.value = false
+  if (restoreFocus) void nextTick(() => nodePickerButton.value?.focus({ preventScroll: true }))
+}
+function focusNodeOption(last = false) {
+  if (props.disabled) return
+  nodePickerOpen.value = true
+  void nextTick(() => {
+    const options = nodePicker.value?.querySelectorAll<HTMLButtonElement>('.node-picker-option:not(:disabled)')
+    if (options?.length) options[last ? options.length - 1 : 0].focus()
+  })
+}
+function onOutsidePicker(event: Event) {
+  if (nodePickerOpen.value && event.target instanceof Node && !nodePicker.value?.contains(event.target)) closeNodePicker()
+}
+function pickNode(isInterface: boolean) { closeNodePicker(true); addNode(isInterface) }
 function addNode(isInterface = false) {
   if (props.disabled || !canDiscard()) return
   const next = clone()
@@ -123,7 +143,8 @@ function addNode(isInterface = false) {
   const node: Diagram['classes'][number] = { name: `${prefix}${i}`, abstract: false, attributes: [], methods: [] }
   if (isInterface) node.kind = 'interface'
   next.classes.push(node)
-  if (!props.onApply(next)) { error.value = `无法同步源码，未添加${isInterface ? '接口' : '类'}。`; return }
+  const applied = props.onApply(next)
+  if (applied !== true) { error.value = typeof applied === 'string' ? applied : `无法同步源码，未添加${isInterface ? '接口' : '类'}。`; return }
   setDirty(false); selection.value = null
   void nextTick(() => choose('class', next.classes.length - 1))
 }
@@ -131,7 +152,8 @@ function addRelation() {
   if (props.disabled || props.diagram.classes.length < 2 || !canDiscard()) return
   const next = clone()
   next.relations.push({ source: next.classes[0].name, target: next.classes[1].name, type: 'ClassBidirectional', label: '', sourceMultiplicity: '', targetMultiplicity: '' })
-  if (!props.onApply(next)) { error.value = '无法同步源码，未添加关联。'; return }
+  const applied = props.onApply(next)
+  if (applied !== true) { error.value = typeof applied === 'string' ? applied : '无法同步源码，未添加关联。'; return }
   setDirty(false); selection.value = null
   void nextTick(() => choose('relation', next.relations.length - 1))
 }
@@ -144,7 +166,8 @@ function removeSelected() {
     next.classes.splice(selection.value.index, 1)
     next.relations = next.relations.filter(r => r.source !== name && r.target !== name)
   } else next.relations.splice(selection.value.index, 1)
-  if (!props.onApply(next)) { error.value = '无法同步源码，未删除内容。'; return }
+  const applied = props.onApply(next)
+  if (applied !== true) { error.value = typeof applied === 'string' ? applied : '无法同步源码，未删除内容。'; return }
   setDirty(false); selection.value = null; error.value = ''
 }
 let layoutSaveBlocked = false
@@ -223,15 +246,16 @@ function restorePending() {
   }
 }
 function beforeUnload(e: BeforeUnloadEvent) { if (dirty.value) { e.preventDefault(); e.returnValue = '' } }
-watch(() => props.problemId, () => { selection.value = null; dirty.value = false; emit('dirty', false); loadLayout(); void nextTick(restorePending) })
+watch(() => props.problemId, () => { closeNodePicker(); selection.value = null; dirty.value = false; emit('dirty', false); loadLayout(); void nextTick(restorePending) })
+watch(() => props.disabled, value => { if (value) closeNodePicker() })
 watch(() => props.diagram, () => {
   if (!selection.value || dirty.value) return
   const { kind, index } = selection.value
   if (index >= (kind === 'class' ? props.diagram.classes.length : props.diagram.relations.length)) { selection.value = null; return }
   selection.value = null; choose(kind, index)
 })
-onMounted(() => { loadLayout(); void nextTick(restorePending); window.addEventListener('beforeunload', beforeUnload) })
-onBeforeUnmount(() => { window.removeEventListener('beforeunload', beforeUnload) })
+onMounted(() => { loadLayout(); void nextTick(restorePending); window.addEventListener('beforeunload', beforeUnload); document.addEventListener('pointerdown', onOutsidePicker); document.addEventListener('focusin', onOutsidePicker) })
+onBeforeUnmount(() => { window.removeEventListener('beforeunload', beforeUnload); document.removeEventListener('pointerdown', onOutsidePicker); document.removeEventListener('focusin', onOutsidePicker) })
 const selected = computed(() => selection.value)
 const selectedInterface = computed(() => selection.value?.kind === 'class' && props.diagram.classes[selection.value.index]?.kind === 'interface')
 defineExpose({ hasPending: () => dirty.value, getLayout: () => structuredClone(toRaw(positions.value)), getPending: () => dirty.value ? { selection: selection.value, form: { ...form }, raw: rawPending } : null })
@@ -240,8 +264,13 @@ defineExpose({ hasPending: () => dirty.value, getLayout: () => structuredClone(t
 <template>
   <div class="native-canvas">
     <div class="canvas-toolbar">
-      <button :disabled="disabled" @click="addNode(false)"><Plus :size="14" /> 添加类</button>
-      <button :disabled="disabled" @click="addNode(true)"><Plus :size="14" /> 添加接口</button>
+      <div ref="nodePicker" class="node-picker" @keydown.esc.stop.prevent="nodePickerOpen && closeNodePicker(true)">
+        <button ref="nodePickerButton" :disabled="disabled" :aria-expanded="nodePickerOpen" aria-controls="node-picker-options" @click="nodePickerOpen = !nodePickerOpen" @keydown.down.prevent="focusNodeOption()" @keydown.up.prevent="focusNodeOption(true)"><Plus :size="14" /> 添加元素 <ChevronDown :size="13" /></button>
+        <div v-show="nodePickerOpen" id="node-picker-options" class="node-picker-popover" role="group" aria-label="可添加的元素">
+          <button class="node-picker-option" :disabled="disabled" aria-label="添加类" @click="pickNode(false)"><Box :size="16" /><span><strong>类</strong><small>描述对象的属性和方法</small></span></button>
+          <button class="node-picker-option" :disabled="disabled" aria-label="添加接口" @click="pickNode(true)"><Braces :size="16" /><span><strong>接口</strong><small>定义能力和操作的约定</small></span></button>
+        </div>
+      </div>
       <button :disabled="disabled || diagram.classes.length < 2" @click="addRelation"><Link2 :size="14" /> 添加关联</button>
       <span>拖动类或接口调整位置，点击节点或连线编辑</span>
     </div>
@@ -258,7 +287,7 @@ defineExpose({ hasPending: () => dirty.value, getLayout: () => structuredClone(t
         <g v-for="(c, i) in diagram.classes" :key="c.name" class="canvas-node" :class="{ selected: isSelected('class', i), disabled }" :transform="`translate(${position(c.name, i).x} ${position(c.name, i).y})`" role="button" tabindex="0" :aria-pressed="isSelected('class', i)" :aria-label="`编辑${c.kind === 'interface' ? '接口' : '类'} ${c.name}`" @pointerdown="startDrag($event, c.name, i)" @click="choose('class', i)" @keydown.enter.prevent="choose('class', i)" @keydown.space.prevent="choose('class', i)">
           <rect class="node-outline" x="-5" y="-5" width="210" :height="height(i) + 10" rx="7" aria-hidden="true"/><rect class="node-body" width="200" :height="height(i)" rx="4"/><line x1="0" :y1="headerHeight(i)" x2="200" :y2="headerHeight(i)"/><text v-if="c.kind === 'interface'" x="100" y="17" text-anchor="middle" class="node-stereotype">&lt;&lt;interface&gt;&gt;</text><text x="100" :y="headerHeight(i) - 10" text-anchor="middle" class="node-title">{{ c.name }}</text><text v-for="(a, n) in c.attributes" :key="`a-${n}`" x="10" :y="headerHeight(i) + 20 + n * 18">{{ a }}</text><text v-for="(m, n) in c.methods" :key="`m-${n}`" x="10" :y="headerHeight(i) + 20 + (c.attributes.length + n) * 18">{{ m }}</text>
         </g>
-        <text v-if="!diagram.classes.length" x="40" y="48" class="canvas-hint">点击“添加类”或“添加接口”开始建模</text>
+        <text v-if="!diagram.classes.length" x="40" y="48" class="canvas-hint">点击“添加元素”，选择类或接口开始建模</text>
       </svg>
     </div>
     <Transition name="inspector">

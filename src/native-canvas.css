@@ -1,6 +1,14 @@
 .native-canvas { display:flex; flex:1 1 0; min-height:0; flex-direction:column; background:#fff; color:var(--ink); }
 html[data-theme="dark"] .native-canvas { background:#1d2025; }
-.canvas-toolbar { display:flex; align-items:center; flex-wrap:wrap; gap:6px; padding:8px; border-bottom:1px solid var(--line); font-size:11px; color:var(--muted); }
+.canvas-toolbar { position:relative; z-index:3; display:flex; align-items:center; flex-wrap:wrap; gap:6px; padding:8px; border-bottom:1px solid var(--line); font-size:11px; color:var(--muted); }
+.node-picker { position:relative; }
+.node-picker-popover { position:absolute; z-index:1; top:calc(100% + 6px); left:0; width:min(240px, calc(100vw - 36px)); max-height:min(320px, 60vh); overflow:auto; padding:5px; border:1px solid var(--line); border-radius:6px; background:var(--surface); box-shadow:0 8px 24px #0004; }
+.canvas-toolbar .node-picker-option { display:flex; width:100%; justify-content:flex-start; align-items:flex-start; gap:9px; padding:8px; border:1px solid transparent; text-align:left; }
+.node-picker-option svg { flex:none; margin-top:2px; color:#3498db; }
+.node-picker-option span { display:flex; min-width:0; flex-direction:column; gap:3px; }
+.node-picker-option strong { font-weight:600; }
+.node-picker-option small { color:var(--muted); font-size:11px; line-height:1.4; }
+.canvas-toolbar .node-picker-option:focus-visible { outline:2px solid #3498db; outline-offset:-2px; }
 .canvas-toolbar button, .canvas-inspector button { display:inline-flex; align-items:center; justify-content:center; gap:4px; padding:5px 8px; border:1px solid var(--line); border-radius:4px; color:var(--ink); background:transparent; font-size:12px; }
 .canvas-toolbar button:disabled, .canvas-inspector button:disabled { opacity:.45; cursor:not-allowed; }
 .canvas-toolbar button:not(:disabled):hover, .canvas-inspector button:not(:disabled):hover { border-color:#3498db; color:#3498db; }

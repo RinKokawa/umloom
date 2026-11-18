@@ -1,5 +1,15 @@
 import { expect, test } from '@playwright/test'
 
+test('only PlantUML and Mermaid formats are available', async ({ page }) => {
+  await page.goto('/')
+  const format = page.getByLabel('源码格式')
+  await expect(format.locator('option')).toHaveText(['PlantUML', 'Mermaid'])
+  await format.selectOption('mermaid')
+  await expect(page.getByRole('textbox', { name: 'Mermaid source' })).toHaveValue(/classDiagram/)
+  await format.selectOption('plantuml')
+  await expect(page.getByRole('textbox', { name: 'PlantUML source' })).toHaveValue(/@startuml/)
+})
+
 test('canvas updates both multiplicities and source; no external iframe is used', async ({ page }) => {
   await page.goto('/')
   await expect(page.locator('iframe')).toHaveCount(0)
@@ -19,7 +29,7 @@ test('unfinished source preserves last canvas and is restored', async ({ page })
   const source = page.getByRole('textbox', { name: 'PlantUML source' })
   await source.fill('@startuml\nenum Student\n@enduml')
   await expect(page.locator('footer')).toContainText('源码尚未同步')
-  await expect(page.getByRole('button', { name: '添加类' })).toBeDisabled()
+  await expect(page.getByRole('button', { name: '添加元素' })).toBeDisabled()
   await expect(page.getByRole('button', { name: '编辑类 Student' })).toBeVisible()
   await page.reload()
   await expect(source).toHaveValue(/enum Student/)
@@ -44,7 +54,8 @@ test('unapplied panel changes survive reload and can be applied', async ({ page 
 
 test('add classes, relations and edit members; switch source format', async ({ page }) => {
   await page.goto('/')
-  await page.getByRole('button', { name: '添加类' }).click()
+  await page.getByRole('button', { name: '添加元素' }).click()
+  await page.getByRole('button', { name: '添加类', exact: true }).click()
   await page.getByLabel('类名', { exact: true }).fill('Course')
   await page.getByRole('button', { name: '添加属性' }).click()
   await page.getByLabel('属性 1 名称').fill('title')

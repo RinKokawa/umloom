@@ -2,7 +2,8 @@ import { expect, test } from '@playwright/test'
 
 test('create an interface with a method, round-trip both formats, and restore', async ({ page }) => {
   await page.goto('/')
-  await page.getByRole('button', { name: '添加接口' }).click()
+  await page.getByRole('button', { name: '添加元素' }).click()
+  await page.getByRole('button', { name: '添加接口', exact: true }).click()
   await expect(page.getByRole('button', { name: '编辑接口 Interface1' })).toContainText('<<interface>>')
   await page.getByLabel('接口名').fill('Payable')
   await page.getByRole('button', { name: '添加方法' }).click()
