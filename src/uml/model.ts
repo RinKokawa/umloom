@@ -37,7 +37,7 @@ export function assertOjDiagram(diagram: Diagram): void {
     if (c.abstract) throw new Error(`暂不支持转换抽象类 ${c.name}，原内容已保留。`)
   }
   for (const relation of diagram.relations) {
-    if (!['ClassBidirectional', 'ClassUnidirectional'].includes(relation.type)) {
+    if (!['ClassBidirectional', 'ClassUnidirectional', 'ClassInheritance', 'ClassRealization'].includes(relation.type)) {
       throw new Error(`暂不支持转换关系类型 ${relation.type}，原内容已保留。`)
     }
   }

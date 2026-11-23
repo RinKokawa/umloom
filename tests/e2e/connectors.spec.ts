@@ -1,0 +1,121 @@
+import { expect, test, type Page } from '@playwright/test'
+
+async function center(locator: ReturnType<Page['locator']>) {
+  const box = (await locator.boundingBox())!
+  return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+}
+const port = (page: Page, name: string, side: '左' | '右') => page.getByRole('button', { name: `${name} 的${side}连接点`, exact: true })
+
+async function dragBetween(page: Page, from: ReturnType<Page['locator']>, to: ReturnType<Page['locator']>) {
+  const a = await center(from), b = await center(to)
+  await page.mouse.move(a.x, a.y)
+  await page.mouse.down()
+  await page.mouse.move(b.x, b.y, { steps: 8 })
+  await page.mouse.up()
+}
+
+test('drag a port to another class, preview safely, then edit and round-trip the relation', async ({ page }) => {
+  await page.goto('/')
+  const source = page.getByLabel('PlantUML source')
+  const text = '@startuml\nclass Flight\nclass Airport\n@enduml'
+  await source.fill(text)
+  const from = port(page, 'Flight', '右'), to = port(page, 'Airport', '左')
+  await expect(from).toBeVisible(); await expect(to).toBeVisible()
+  const a = await center(from), b = await center(to)
+  await page.mouse.move(a.x, a.y); await page.mouse.down()
+  await page.mouse.move(b.x, b.y, { steps: 8 })
+  await expect(page.locator('.connection-preview.valid')).toHaveCount(1)
+  await expect(page.getByRole('button', { name: '编辑类 Airport' })).toHaveClass(/connection-target/)
+  await expect(source).toHaveValue(text)
+  await page.mouse.up()
+  await expect(source).toHaveValue(/Flight -- Airport/)
+  await expect(page.getByLabel('起点类')).toHaveValue('Flight')
+  await expect(page.getByLabel('终点类')).toHaveValue('Airport')
+  await page.getByLabel('关联方向').selectOption('ClassInheritance')
+  await page.getByRole('button', { name: '应用更改' }).click()
+  await expect(source).toHaveValue(/Flight --\|> Airport/)
+  await page.getByLabel('源码格式').selectOption('mermaid')
+  await expect(page.getByLabel('Mermaid source')).toHaveValue(/Flight --\|> Airport/)
+})
+
+test('cancel, invalid targets and rejected pending edits never change source', async ({ page }) => {
+  await page.goto('/')
+  const source = page.getByLabel('PlantUML source')
+  const original = '@startuml\nclass Flight\nclass Airport\n@enduml'
+  await source.fill(original)
+  await page.getByRole('button', { name: '编辑类 Flight' }).click()
+  await page.getByLabel('类名', { exact: true }).fill('PendingFlight')
+  await expect(page.locator('.canvas-inspector')).toHaveCSS('transform', 'none')
+  let dialogs = 0
+  page.on('dialog', dialog => { dialogs++; void dialog.dismiss() })
+  const from = port(page, 'Flight', '右'), to = port(page, 'Airport', '左')
+  const a = await center(from)
+  await page.mouse.move(a.x, a.y); await page.mouse.down()
+  await page.mouse.move(a.x + 50, a.y + 110, { steps: 5 }); await page.mouse.up()
+  expect(dialogs).toBe(0)
+  await expect(source).toHaveValue(original)
+  await expect(page.getByLabel('类名', { exact: true })).toHaveValue('PendingFlight')
+  await dragBetween(page, from, to)
+  await expect.poll(() => dialogs).toBe(1)
+  await expect(source).toHaveValue(original)
+  await expect(page.getByLabel('类名', { exact: true })).toHaveValue('PendingFlight')
+  await expect(page.getByRole('button', { name: /编辑关联 Flight 到 Airport/ })).toHaveCount(0)
+  await page.getByRole('button', { name: '撤销编辑' }).click()
+  const start = await center(from)
+  await page.mouse.move(start.x, start.y); await page.mouse.down()
+  await page.mouse.move(start.x + 35, start.y + 30, { steps: 3 })
+  await page.keyboard.press('Escape')
+  await page.mouse.up()
+  await expect(page.locator('.connection-preview')).toHaveCount(0)
+  await expect(source).toHaveValue(original)
+})
+
+test('keyboard ports create parallel relations, and stale source disables connecting', async ({ page }) => {
+  await page.goto('/')
+  const source = page.getByLabel('PlantUML source')
+  await source.fill('@startuml\nclass Flight\nclass Airport\n@enduml')
+  const from = port(page, 'Flight', '右'), to = port(page, 'Airport', '左')
+  await from.focus(); await page.keyboard.press('Enter')
+  await expect(page.getByRole('status').filter({ hasText: '已选择 Flight' })).toBeVisible()
+  await page.keyboard.press('Tab')
+  await expect(to).toBeFocused()
+  await page.keyboard.press('Enter')
+  await expect(source).toHaveValue(/Flight -- Airport/)
+  await page.getByRole('button', { name: '关闭编辑面板' }).click()
+  await dragBetween(page, from, to)
+  await expect(page.getByRole('button', { name: '编辑关联 Flight 到 Airport', exact: true })).toHaveCount(2)
+  await page.getByRole('button', { name: '关闭编辑面板' }).click()
+  await source.fill('@startuml\nenum Flight\n@enduml')
+  await expect(page.locator('footer')).toContainText('未同步')
+  await expect(from).toHaveAttribute('aria-disabled', 'true')
+  await expect(from).toHaveAttribute('tabindex', '-1')
+})
+
+test('a source change during a drag cancels the preview without overwriting the new source', async ({ page }) => {
+  await page.goto('/')
+  const source = page.getByLabel('PlantUML source')
+  await source.fill('@startuml\nclass Flight\nclass Airport\n@enduml')
+  const a = await center(port(page, 'Flight', '右')), b = await center(port(page, 'Airport', '左'))
+  await page.mouse.move(a.x, a.y); await page.mouse.down()
+  await page.mouse.move(a.x + 25, a.y, { steps: 3 })
+  await expect(page.locator('.connection-preview')).toHaveCount(1)
+  const changed = '@startuml\nclass Flight\nclass Airport\nclass Pilot\n@enduml'
+  await source.fill(changed)
+  await expect(page.locator('.connection-preview')).toHaveCount(0)
+  await page.mouse.move(b.x, b.y, { steps: 4 }); await page.mouse.up()
+  await expect(source).toHaveValue(changed)
+  await expect(page.getByRole('button', { name: '编辑关联 Flight 到 Airport' })).toHaveCount(0)
+})
+
+test('touch dragging works after fitting and zooming', async ({ page, context }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/')
+  await page.getByRole('button', { name: '适应内容' }).click()
+  const from = port(page, 'Classroom', '右'), to = port(page, 'Student', '左')
+  const a = await center(from), b = await center(to)
+  const client = await context.newCDPSession(page)
+  await client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: a.x, y: a.y, id: 1 }] })
+  await client.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: b.x, y: b.y, id: 1 }] })
+  await client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+  await expect(page.getByRole('button', { name: '编辑关联 Classroom 到 Student', exact: true })).toHaveCount(2)
+})

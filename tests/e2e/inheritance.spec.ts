@@ -1,0 +1,23 @@
+import { expect, test } from '@playwright/test'
+
+test('edit inheritance on canvas and round-trip through source formats', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: '编辑关联 Classroom 到 Student' }).click()
+  await page.getByLabel('起点多重性').fill('')
+  await page.getByLabel('终点多重性').fill('')
+  await page.getByLabel('起点类').selectOption('Student')
+  await page.getByLabel('终点类').selectOption('Classroom')
+  await page.getByLabel('关联方向').selectOption('ClassInheritance')
+  await page.getByRole('button', { name: '应用更改' }).click()
+  await expect(page.getByRole('textbox', { name: 'PlantUML source' })).toHaveValue(/Student --\|> Classroom/)
+  await expect(page.locator('.edge-line').first()).toHaveAttribute('marker-end', 'url(#native-triangle)')
+  await page.getByLabel('源码格式').selectOption('mermaid')
+  await expect(page.getByRole('textbox', { name: 'Mermaid source' })).toHaveValue(/Student --\|> Classroom/)
+  await page.reload()
+  await expect(page.getByRole('textbox', { name: 'Mermaid source' })).toHaveValue(/Student --\|> Classroom/)
+  await page.getByRole('button', { name: '编辑关联 Student 到 Classroom' }).click()
+  await page.getByLabel('关联方向').selectOption('ClassRealization')
+  await page.getByRole('button', { name: '应用更改' }).click()
+  await expect(page.getByRole('textbox', { name: 'Mermaid source' })).toHaveValue(/Student \.\.\|> Classroom/)
+  await expect(page.locator('.edge-line').first()).toHaveAttribute('stroke-dasharray', '6 4')
+})

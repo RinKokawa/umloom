@@ -12,6 +12,6 @@ test('PlantUML and Mermaid round-trip the class diagram subset', () => {
 })
 test('unsupported or incomplete input is rejected', () => {
   assert.throws(() => parsePlantUml('@startuml\nclass Student {\n@enduml'))
-  assert.throws(() => parseMermaid('classDiagram\nclass A\nA <|-- B'))
+  assert.throws(() => parseMermaid('classDiagram\nclass A\nA *-- B'))
   assert.throws(() => assertOjDiagram({classes: [{name: '', abstract:false, attributes:[], methods:[]}], relations:[]}))
 })

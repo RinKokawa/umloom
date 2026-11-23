@@ -112,7 +112,7 @@ function switchTheme() {
   try { localStorage.setItem('uml-oj-canvas-theme', theme.value) } catch { /* optional preference */ }
 }
 function downloadBackup() {
-  const backup = { version: 1, source: source.value, format: format.value, model: model.value, syncedKey, layout: canvas.value?.getLayout(), pendingCanvasEdit: canvas.value?.getPending() }
+  const backup = { version: 1, source: source.value, format: format.value, model: model.value, syncedKey, layout: canvas.value?.getLayout(), icons: canvas.value?.getIcons(), pendingCanvasEdit: canvas.value?.getPending() }
   const url = URL.createObjectURL(new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' }))
   const link = document.createElement('a'); link.href = url; link.download = 'uml-oj-canvas-backup.json'; link.click()
   setTimeout(() => URL.revokeObjectURL(url), 1000)
@@ -120,7 +120,7 @@ function downloadBackup() {
 function reset() {
   if (canvasDirty.value) { message.value = '请先应用或撤销画布面板中的编辑。'; return }
   if (!window.confirm('将当前答案重置为示例，原内容会先备份到本机。是否继续？')) return
-  try { localStorage.setItem(`uml-oj-canvas-reset-backup:${Date.now()}`, JSON.stringify({ source: source.value, format: format.value, model: model.value, layout: canvas.value?.getLayout() })) }
+  try { localStorage.setItem(`uml-oj-canvas-reset-backup:${Date.now()}`, JSON.stringify({ source: source.value, format: format.value, model: model.value, layout: canvas.value?.getLayout(), icons: canvas.value?.getIcons() })) }
   catch { storageOK.value = false; message.value = '无法备份当前内容，未重置。'; return }
   updating = true
   try { format.value = 'plantuml'; source.value = initial; model.value = parsePlantUml(initial) } finally { updating = false }
@@ -180,7 +180,7 @@ onBeforeUnmount(() => { clearTimeout(timer); save() })
         <div class="pane-header"><span>源码</span><label>格式 <select :value="format" aria-label="源码格式" :aria-describedby="formatError ? 'format-error' : undefined" @change="changeFormat"><option value="plantuml">PlantUML</option><option value="mermaid">Mermaid</option></select></label></div>
         <p v-if="formatError" id="format-error" class="format-error" role="alert">{{ formatError }} 切换未完成，原源码已保留。</p>
         <textarea v-model="source" :readonly="readOnlySource" :aria-label="`${formatNames[format]} source`" spellcheck="false"></textarea>
-        <p class="hint">支持普通类、接口、属性、方法、普通关联及两端多重性。未完成或不支持的源码会保留，不会覆盖画布。</p>
+        <p class="hint">支持普通类、接口、属性、方法、普通关联、继承、实现及两端多重性。未完成或不支持的源码会保留，不会覆盖画布。</p>
       </section>
     </main>
     <footer><span :class="{ warning: state !== 'synced' || canvasDirty }">{{ canvasDirty ? '画布面板有未应用的编辑，请先应用或撤销。' : message }}</span><span>数据保存在当前浏览器</span></footer>

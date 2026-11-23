@@ -83,13 +83,14 @@ export function parseMermaid(text: string): Diagram {
     }
     const member = new RegExp(`^(${name})\\s*:\\s*(.+)$`).exec(line)
     if (member) { addMember(getClass(member[1]), member[2]); continue }
-    const relation = new RegExp(`^(${name})\\s*(?:"([^"\\n]*)"\\s*)?(<--|-->|--)\\s*(?:"([^"\\n]*)"\\s*)?(${name})(?:\\s*:\\s*(.*))?$`).exec(line)
+    const relation = new RegExp(`^(${name})\\s*(?:"([^"\\n]*)"\\s*)?(<\\|--|--\\|>|<\\|\\.\\.|\\.\\.\\|>|<--|-->|--)\\s*(?:"([^"\\n]*)"\\s*)?(${name})(?:\\s*:\\s*(.*))?$`).exec(line)
     if (relation) {
       const [, left, leftMultiplicity = '', arrow, rightMultiplicity = '', right, label = ''] = relation
       getClass(left); getClass(right)
-      const reverse = arrow === '<--'
+      const reverse = ['<--', '<|--', '<|..'].includes(arrow)
+      const type = arrow.includes('|') ? (arrow.includes('..') ? 'ClassRealization' : 'ClassInheritance') : arrow === '--' ? 'ClassBidirectional' : 'ClassUnidirectional'
       diagram.relations.push({ source: reverse ? right : left, target: reverse ? left : right,
-        type: arrow === '--' ? 'ClassBidirectional' : 'ClassUnidirectional', label,
+        type, label,
         sourceMultiplicity: reverse ? rightMultiplicity : leftMultiplicity,
         targetMultiplicity: reverse ? leftMultiplicity : rightMultiplicity })
       continue
@@ -108,6 +109,7 @@ export function toMermaid(diagram: Diagram): string {
     const members = [...(c.kind === 'interface' ? ['<<interface>>'] : []), ...c.attributes.map(m => writeMember(m, false)), ...c.methods.map(m => writeMember(m, true))]
     return members.length ? `class ${c.name} {\n${members.map(m => `  ${m}`).join('\n')}\n}` : `class ${c.name}`
   })
-  const relations = diagram.relations.map(e => `${e.source}${e.sourceMultiplicity ? ` "${e.sourceMultiplicity}"` : ''} ${e.type === 'ClassBidirectional' ? '--' : '-->'} ${e.targetMultiplicity ? `"${e.targetMultiplicity}" ` : ''}${e.target}${e.label ? ` : ${e.label}` : ''}`)
+  const arrows: Record<string, string> = { ClassBidirectional: '--', ClassUnidirectional: '-->', ClassInheritance: '--|>', ClassRealization: '..|>' }
+  const relations = diagram.relations.map(e => `${e.source}${e.sourceMultiplicity ? ` "${e.sourceMultiplicity}"` : ''} ${arrows[e.type]} ${e.targetMultiplicity ? `"${e.targetMultiplicity}" ` : ''}${e.target}${e.label ? ` : ${e.label}` : ''}`)
   return ['classDiagram', ...classes, ...relations].join('\n')
 }

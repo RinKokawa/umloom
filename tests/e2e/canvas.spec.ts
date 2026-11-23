@@ -67,7 +67,7 @@ test('add classes, relations and edit members; switch source format', async ({ p
   await expect(page.getByRole('textbox', { name: 'PlantUML source' })).toHaveValue(/class Course/)
   await page.getByLabel('源码格式').selectOption('mermaid')
   await expect(page.getByRole('textbox', { name: 'Mermaid source' })).toHaveValue(/class Course/)
-  await page.getByRole('button', { name: '添加关联' }).click()
+  await page.getByRole('button', { name: '添加关系' }).click()
   await page.getByLabel('终点类').selectOption('Course')
   await page.getByLabel('终点多重性').fill('0..*')
   await page.getByRole('button', { name: '应用更改' }).click()
@@ -77,6 +77,7 @@ test('add classes, relations and edit members; switch source format', async ({ p
 test('mobile switches between canvas and source without horizontal page overflow', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/')
+  await page.getByRole('button', { name: '适应内容' }).click()
   await page.getByRole('button', { name: '编辑类 Student' }).click()
   await page.getByLabel('类名', { exact: true }).fill('Learner')
   await page.getByRole('button', { name: '应用更改' }).click()
